@@ -109,71 +109,71 @@ export default function SnakeGame() {
   }, []);
 
   // 游戏主循环
+  const moveSnake = useCallback(() => {
+    setSnake(prevSnake => {
+      const head = { ...prevSnake[0] };
+      
+      // 根据方向移动头部
+      switch (directionRef.current) {
+        case 'UP':
+          head.y -= 1;
+          break;
+        case 'DOWN':
+          head.y += 1;
+          break;
+        case 'LEFT':
+          head.x -= 1;
+          break;
+        case 'RIGHT':
+          head.x += 1;
+          break;
+      }
+
+      // 检查是否撞墙
+      if (
+        head.x < 0 || 
+        head.x >= gridSize || 
+        head.y < 0 || 
+        head.y >= gridSize
+      ) {
+        setGameOver(true);
+        return prevSnake;
+      }
+
+      // 检查是否撞到自己
+      if (prevSnake.some((segment, index) => 
+        index > 0 && segment.x === head.x && segment.y === head.y
+      )) {
+        setGameOver(true);
+        return prevSnake;
+      }
+
+      const newSnake = [head, ...prevSnake];
+      
+      // 检查是否吃到食物
+      if (head.x === food.x && head.y === food.y) {
+        setFood(() => generateFood()); // Use functional update to ensure latest state
+        setScore(prev => prev + 10);
+        
+        // 增加速度（但不超过一定限制）
+        if (speed > 50) {
+          setSpeed(prev => prev - 2);
+        }
+      } else {
+        // 没吃到食物则移除尾部
+        newSnake.pop();
+      }
+
+      return newSnake;
+    });
+  }, [food, generateFood, gridSize, speed]);
+
   useEffect(() => {
     if (isPausedRef.current || gameOverRef.current) return;
 
-    const moveSnake = () => {
-      setSnake(prevSnake => {
-        const head = { ...prevSnake[0] };
-        
-        // 根据方向移动头部
-        switch (directionRef.current) {
-          case 'UP':
-            head.y -= 1;
-            break;
-          case 'DOWN':
-            head.y += 1;
-            break;
-          case 'LEFT':
-            head.x -= 1;
-            break;
-          case 'RIGHT':
-            head.x += 1;
-            break;
-        }
-
-        // 检查是否撞墙
-        if (
-          head.x < 0 || 
-          head.x >= gridSize || 
-          head.y < 0 || 
-          head.y >= gridSize
-        ) {
-          setGameOver(true);
-          return prevSnake;
-        }
-
-        // 检查是否撞到自己
-        if (prevSnake.some((segment, index) => 
-          index > 0 && segment.x === head.x && segment.y === head.y
-        )) {
-          setGameOver(true);
-          return prevSnake;
-        }
-
-        const newSnake = [head, ...prevSnake];
-        
-        // 检查是否吃到食物
-        if (head.x === food.x && head.y === food.y) {
-          setFood(generateFood());
-          setScore(prev => prev + 10);
-          
-          // 增加速度（但不超过一定限制）
-          if (speed > 50) {
-            setSpeed(prev => prev - 2);
-          }
-        } else {
-          // 没吃到食物则移除尾部
-          newSnake.pop();
-        }
-
-        return newSnake;
-      });
-    };
-
     const gameInterval = setInterval(moveSnake, speed);
     return () => clearInterval(gameInterval);
-  }, [food, generateFood, speed]);
+  }, [moveSnake]);
 
   // 重置游戏
   const resetGame = () => {
