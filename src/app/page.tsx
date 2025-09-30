@@ -1,103 +1,363 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+type Position = {
+  x: number;
+  y: number;
+};
+
+type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+
+export default function SnakeGame() {
+  // 游戏设置
+  const gridSize = 20;
+  const initialSpeed = 150; // 毫秒
+  
+  // 游戏状态
+  const [snake, setSnake] = useState<Position[]>([{ x: 10, y: 10 }]);
+  const [food, setFood] = useState<Position>({ x: 5, y: 5 });
+  const [direction, setDirection] = useState<Direction>('RIGHT');
+  const [gameOver, setGameOver] = useState(false);
+  const [isPaused, setIsPaused] = useState(true);
+  const [score, setScore] = useState(0);
+  const [speed, setSpeed] = useState(initialSpeed);
+  
+  // 使用 ref 来保存最新状态，避免闭包问题
+  const directionRef = useRef(direction);
+  const gameOverRef = useRef(gameOver);
+  const isPausedRef = useRef(isPaused);
+  
+  // 更新 ref 值
+  useEffect(() => {
+    directionRef.current = direction;
+    gameOverRef.current = gameOver;
+    isPausedRef.current = isPaused;
+  }, [direction, gameOver, isPaused]);
+
+  // 生成食物位置
+  const generateFood = useCallback((): Position => {
+    const newFood = {
+      x: Math.floor(Math.random() * gridSize),
+      y: Math.floor(Math.random() * gridSize)
+    };
+    
+    // 确保食物不在蛇身上
+    const isOnSnake = snake.some(segment => 
+      segment.x === newFood.x && segment.y === newFood.y
+    );
+    
+    if (isOnSnake) {
+      return generateFood();
+    }
+    
+    return newFood;
+  }, [snake, gridSize]);
+
+  // 初始化食物
+  useEffect(() => {
+    setFood(generateFood());
+  }, [generateFood]);
+
+  // 处理键盘输入
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (gameOverRef.current) return;
+
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          if (directionRef.current !== 'DOWN') {
+            setDirection('UP');
+          }
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          if (directionRef.current !== 'UP') {
+            setDirection('DOWN');
+          }
+          break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          if (directionRef.current !== 'RIGHT') {
+            setDirection('LEFT');
+          }
+          break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          if (directionRef.current !== 'LEFT') {
+            setDirection('RIGHT');
+          }
+          break;
+        case ' ':
+          // 空格键暂停/继续
+          setIsPaused(prev => !prev);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // 游戏主循环
+  useEffect(() => {
+    if (isPausedRef.current || gameOverRef.current) return;
+
+    const moveSnake = () => {
+      setSnake(prevSnake => {
+        const head = { ...prevSnake[0] };
+        
+        // 根据方向移动头部
+        switch (directionRef.current) {
+          case 'UP':
+            head.y -= 1;
+            break;
+          case 'DOWN':
+            head.y += 1;
+            break;
+          case 'LEFT':
+            head.x -= 1;
+            break;
+          case 'RIGHT':
+            head.x += 1;
+            break;
+        }
+
+        // 检查是否撞墙
+        if (
+          head.x < 0 || 
+          head.x >= gridSize || 
+          head.y < 0 || 
+          head.y >= gridSize
+        ) {
+          setGameOver(true);
+          return prevSnake;
+        }
+
+        // 检查是否撞到自己
+        if (prevSnake.some((segment, index) => 
+          index > 0 && segment.x === head.x && segment.y === head.y
+        )) {
+          setGameOver(true);
+          return prevSnake;
+        }
+
+        const newSnake = [head, ...prevSnake];
+        
+        // 检查是否吃到食物
+        if (head.x === food.x && head.y === food.y) {
+          setFood(generateFood());
+          setScore(prev => prev + 10);
+          
+          // 增加速度（但不超过一定限制）
+          if (speed > 50) {
+            setSpeed(prev => prev - 2);
+          }
+        } else {
+          // 没吃到食物则移除尾部
+          newSnake.pop();
+        }
+
+        return newSnake;
+      });
+    };
+
+    const gameInterval = setInterval(moveSnake, speed);
+    return () => clearInterval(gameInterval);
+  }, [food, generateFood, speed]);
+
+  // 重置游戏
+  const resetGame = () => {
+    setSnake([{ x: 10, y: 10 }]);
+    setFood(generateFood());
+    setDirection('RIGHT');
+    setGameOver(false);
+    setIsPaused(false);
+    setScore(0);
+    setSpeed(initialSpeed);
+  };
+
+  // 控制按钮处理函数
+  const handleDirectionChange = (newDirection: Direction) => {
+    if (gameOver) return;
+    
+    // 防止反向移动
+    if (
+      (newDirection === 'UP' && direction !== 'DOWN') ||
+      (newDirection === 'DOWN' && direction !== 'UP') ||
+      (newDirection === 'LEFT' && direction !== 'RIGHT') ||
+      (newDirection === 'RIGHT' && direction !== 'LEFT')
+    ) {
+      setDirection(newDirection);
+    }
+  };
+
+  // 渲染游戏网格
+  const renderGrid = () => {
+    const grid = [];
+    
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        const isSnakeHead = snake[0].x === x && snake[0].y === y;
+        const isSnakeBody = snake.slice(1).some(segment => segment.x === x && segment.y === y);
+        const isFood = food.x === x && food.y === y;
+        
+        let cellClass = 'cell';
+        
+        if (isSnakeHead) {
+          cellClass += ' snake-head';
+        } else if (isSnakeBody) {
+          cellClass += ' snake';
+        } else if (isFood) {
+          cellClass += ' food';
+        }
+        
+        grid.push(
+          <div
+            key={`${x}-${y}`}
+            className={cellClass}
+          />
+        );
+      }
+    }
+    
+    return grid;
+  };
+
+  // 处理触摸滑动控制
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartX.current || !touchStartY.current || gameOver) {
+      return;
+    }
+
+    const touchEndX = e.touches[0].clientX;
+    const touchEndY = e.touches[0].clientY;
+
+    const diffX = touchStartX.current - touchEndX;
+    const diffY = touchStartY.current - touchEndY;
+
+    // 确定主要滑动方向
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      // 水平滑动
+      if (diffX > 0 && directionRef.current !== 'RIGHT') {
+        // 向左滑动
+        setDirection('LEFT');
+      } else if (diffX < 0 && directionRef.current !== 'LEFT') {
+        // 向右滑动
+        setDirection('RIGHT');
+      }
+    } else {
+      // 垂直滑动
+      if (diffY > 0 && directionRef.current !== 'DOWN') {
+        // 向上滑动
+        setDirection('UP');
+      } else if (diffY < 0 && directionRef.current !== 'UP') {
+        // 向下滑动
+        setDirection('DOWN');
+      }
+    }
+
+    // 重置触摸坐标
+    touchStartX.current = touchEndX;
+    touchStartY.current = touchEndY;
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="game-container">
+      <div className="game-header">
+        <h1 className="game-title">Snake Game</h1>
+        <div className="game-score">Score: {score}</div>
+      </div>
+      
+      <div 
+        className="game-board"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+      >
+        {renderGrid()}
+        {gameOver && (
+          <div className="game-over">
+            <h2>Game Over!</h2>
+            <p>Final Score: {score}</p>
+            <button 
+              className="action-btn btn-restart"
+              onClick={resetGame}
+            >
+              Play Again
+            </button>
+          </div>
+        )}
+      </div>
+      
+      <div className="game-controls">
+        <div className="directional-controls">
+          <button 
+            className="control-btn control-up"
+            onClick={() => handleDirectionChange('UP')}
+            aria-label="Move Up"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            ↑
+          </button>
+          <button 
+            className="control-btn control-left"
+            onClick={() => handleDirectionChange('LEFT')}
+            aria-label="Move Left"
           >
-            Read our docs
-          </a>
+            ←
+          </button>
+          <div className="control-btn control-center" aria-hidden="true"></div>
+          <button 
+            className="control-btn control-right"
+            onClick={() => handleDirectionChange('RIGHT')}
+            aria-label="Move Right"
+          >
+            →
+          </button>
+          <button 
+            className="control-btn control-down"
+            onClick={() => handleDirectionChange('DOWN')}
+            aria-label="Move Down"
+          >
+            ↓
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        
+        <div className="action-buttons">
+          <button
+            className={`action-btn ${isPaused ? 'btn-start' : 'btn-pause'}`}
+            onClick={() => setIsPaused(!isPaused)}
+          >
+            {isPaused ? 'Start' : 'Pause'}
+          </button>
+          <button
+            className="action-btn btn-restart"
+            onClick={resetGame}
+          >
+            Restart
+          </button>
+        </div>
+      </div>
+      
+      <div className="instructions">
+        <p>Use <strong>WASD</strong> or <strong>Arrow Keys</strong> to control the snake. On mobile, you can swipe in the direction you want to go. Press <strong>Space</strong> to pause/resume.</p>
+      </div>
     </div>
   );
 }
